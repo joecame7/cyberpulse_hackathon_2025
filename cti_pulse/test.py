@@ -28,8 +28,13 @@ st.set_page_config(
 def download_nltk_data():
     try:
         nltk.data.find('vader_lexicon')
+        nltk.data.find('punkt_tab')
+        nltk.data.find('stopwords')
     except LookupError:
         nltk.download('vader_lexicon')
+        nltk.download('punkt_tab')
+        nltk.download('punkt')  # Fallback
+        nltk.download('stopwords')
 
 download_nltk_data()
 
@@ -42,19 +47,152 @@ headers = {
     "x-api-key": API_KEY
 }
 
-# Enhanced cyber threat keywords with severity ratings
+# Enhanced cyber threat keywords with severity ratings and synonyms
 cyber_threats = {
-    "ransomware attack": {"severity": 5, "category": "Malware"},
-    "data breach": {"severity": 4, "category": "Data Security"},
-    "cyber attack": {"severity": 4, "category": "General Attack"},
-    "phishing campaign": {"severity": 3, "category": "Social Engineering"},
-    "malware outbreak": {"severity": 4, "category": "Malware"},
-    "zero day vulnerability": {"severity": 5, "category": "Vulnerability"},
-    "supply chain attack": {"severity": 5, "category": "Advanced Threat"},
-    "ddos attack": {"severity": 3, "category": "Infrastructure"},
-    "insider threat": {"severity": 4, "category": "Insider Risk"},
-    "apt group": {"severity": 5, "category": "Advanced Persistent Threat"}
+    "ransomware attack": {"severity": 5, "category": "Malware", "synonyms": ["ransomware", "crypto locker", "ransom malware", "encryption attack"]},
+    "data breach": {"severity": 4, "category": "Data Security", "synonyms": ["data leak", "information breach", "data compromise", "data theft", "breach"]},
+    "cyber attack": {"severity": 4, "category": "General Attack", "synonyms": ["cyberattack", "cyber incident", "security breach", "hack", "attack"]},
+    "phishing campaign": {"severity": 3, "category": "Social Engineering", "synonyms": ["phishing", "email scam", "social engineering", "spear phishing", "business email compromise"]},
+    "malware outbreak": {"severity": 4, "category": "Malware", "synonyms": ["malware", "virus", "trojan", "worm", "malicious software"]},
+    "zero day vulnerability": {"severity": 5, "category": "Vulnerability", "synonyms": ["zero-day", "0day", "vulnerability", "exploit", "security flaw"]},
+    "supply chain attack": {"severity": 5, "category": "Advanced Threat", "synonyms": ["supply chain", "third party attack", "vendor compromise"]},
+    "ddos attack": {"severity": 3, "category": "Infrastructure", "synonyms": ["ddos", "denial of service", "dos attack", "botnet attack"]},
+    "insider threat": {"severity": 4, "category": "Insider Risk", "synonyms": ["insider attack", "internal threat", "rogue employee", "privilege abuse"]},
+    "apt group": {"severity": 5, "category": "Advanced Persistent Threat", "synonyms": ["apt", "advanced persistent threat", "nation state", "state sponsored"]}
 }
+
+# Cybersecurity keyword patterns for NLP extraction
+cyber_keywords = {
+    'attacks': ['attack', 'exploit', 'breach', 'hack', 'compromise', 'intrusion', 'incident'],
+    'malware': ['malware', 'virus', 'trojan', 'ransomware', 'spyware', 'adware', 'rootkit', 'worm'],
+    'techniques': ['phishing', 'spoofing', 'social engineering', 'brute force', 'sql injection', 'xss'],
+    'vulnerabilities': ['vulnerability', 'exploit', 'zero-day', '0day', 'cve', 'patch', 'flaw'],
+    'threats': ['threat', 'risk', 'apt', 'insider', 'nation state', 'cybercriminal'],
+    'infrastructure': ['ddos', 'botnet', 'c2', 'command and control', 'infrastructure'],
+    'data': ['data', 'information', 'credentials', 'personal', 'sensitive', 'confidential']
+}
+
+def extract_cybersecurity_terms(user_query):
+    """Extract cybersecurity-related terms from natural language query using NLP"""
+    query_lower = user_query.lower()
+    
+    # Simple tokenization fallback if NLTK fails
+    try:
+        from nltk.corpus import stopwords
+        from nltk.tokenize import word_tokenize
+        
+        stop_words = set(stopwords.words('english'))
+        tokens = word_tokenize(query_lower)
+        tokens = [token for token in tokens if token.isalpha() and token not in stop_words]
+    except Exception as e:
+        # Fallback to simple tokenization if NLTK fails
+        st.warning(f"Using simple tokenization: {str(e)}")
+        simple_stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'what', 'how', 'when', 'where', 'why', 'who', 'this', 'that', 'these', 'those'}
+        # Simple regex-based tokenization
+        import re
+        tokens = re.findall(r'\b[a-zA-Z]+\b', query_lower)
+        tokens = [token for token in tokens if token not in simple_stop_words and len(token) > 2]
+    
+    # Find matching cybersecurity terms
+    confidence_scores = {}
+    
+    # Check for direct matches with threat keywords and synonyms
+    for threat_name, threat_info in cyber_threats.items():
+        score = 0
+        
+        # Check main threat name - give high priority to complete matches
+        threat_words = threat_name.split()
+        if all(word in query_lower for word in threat_words):
+            score += 15  # Higher score for complete threat name match
+        elif any(word in query_lower for word in threat_words):
+            # Only add points if it's a specific word, not generic "attack"
+            specific_words = [word for word in threat_words if word not in ['attack', 'campaign', 'outbreak', 'group']]
+            if any(word in query_lower for word in specific_words):
+                score += 8
+            else:
+                score += 2  # Lower score for generic words like "attack"
+        
+        # Check synonyms - prioritize specific synonyms
+        for synonym in threat_info.get('synonyms', []):
+            if synonym in query_lower:
+                if synonym in ['ransomware', 'phishing', 'ddos', 'apt']:  # Specific cybersecurity terms
+                    score += 12
+                else:
+                    score += 6
+            elif any(word in synonym.split() for word in tokens):
+                score += 2
+        
+        if score > 0:
+            confidence_scores[threat_name] = score
+    
+    # Check for general cybersecurity keywords - but with lower priority
+    for category, keywords in cyber_keywords.items():
+        for keyword in keywords:
+            if keyword in query_lower:
+                # Only boost if we haven't already found a strong specific match
+                max_existing_score = max(confidence_scores.values()) if confidence_scores else 0
+                
+                # If we already have a strong match (>10), don't add generic boosts
+                if max_existing_score > 10:
+                    continue
+                
+                # Map keywords to threat types with conservative scoring
+                if category == 'malware' and keyword == 'ransomware':
+                    confidence_scores['ransomware attack'] = confidence_scores.get('ransomware attack', 0) + 10
+                elif category == 'malware' and keyword in ['virus', 'trojan', 'worm']:
+                    confidence_scores['malware outbreak'] = confidence_scores.get('malware outbreak', 0) + 4
+                elif category == 'attacks' and keyword == 'breach':
+                    confidence_scores['data breach'] = confidence_scores.get('data breach', 0) + 8
+                elif category == 'techniques' and keyword == 'phishing':
+                    confidence_scores['phishing campaign'] = confidence_scores.get('phishing campaign', 0) + 10
+                elif category == 'vulnerabilities' and keyword in ['zero-day', '0day']:
+                    confidence_scores['zero day vulnerability'] = confidence_scores.get('zero day vulnerability', 0) + 8
+                elif category == 'infrastructure' and keyword == 'ddos':
+                    confidence_scores['ddos attack'] = confidence_scores.get('ddos attack', 0) + 10
+                elif category == 'attacks' and keyword == 'attack':
+                    # Only add minimal points for generic "attack" if no specific match found
+                    if not any(score > 8 for score in confidence_scores.values()):
+                        confidence_scores['cyber attack'] = confidence_scores.get('cyber attack', 0) + 3
+    
+    # Sort by confidence and return top matches
+    sorted_threats = sorted(confidence_scores.items(), key=lambda x: x[1], reverse=True)
+    
+    # Be more selective - only return the top match if it's significantly higher than others
+    if sorted_threats:
+        top_score = sorted_threats[0][1]
+        # If the top match is much stronger (>= 10 points), only return it
+        if top_score >= 10:
+            return [sorted_threats[0][0]]
+        # Otherwise, return threats with confidence > 5 and within 3 points of the top score
+        else:
+            return [threat for threat, score in sorted_threats if score > 5 and (top_score - score) <= 3]
+    
+    return []
+
+def generate_chatbot_response(matched_threats, user_query):
+    """Generate a conversational response based on matched threats"""
+    if not matched_threats:
+        return """
+        🤖 I didn't find any specific cybersecurity threats in your query. 
+        
+        Try asking about topics like:
+        - "What ransomware attacks happened recently?"
+        - "Show me data breaches this week"
+        - "Any phishing campaigns targeting banks?"
+        - "Latest zero-day vulnerabilities"
+        """
+    
+    threat_list = ", ".join([threat.title() for threat in matched_threats[:3]])
+    
+    response = f"""
+    🤖 **I found {len(matched_threats)} relevant cybersecurity topic(s) based on your query:**
+    
+    **Searching for:** {threat_list}
+    
+    I'll fetch the latest threat intelligence for these topics. This may take a moment...
+    """
+    
+    return response
 
 def get_threat_data(threat_keyword, num_results=20):
     """Get threat intelligence data for a specific keyword - simplified version"""
@@ -79,7 +217,6 @@ def get_threat_data(threat_keyword, num_results=20):
             st.error(f"❌ API Error for {threat_keyword}: {response.status_code}")
             st.write(f"Response: {response.text}")
             return None
-            
     except requests.exceptions.Timeout:
         st.error(f"⏳ Timeout for {threat_keyword}")
         return None
@@ -196,13 +333,74 @@ def main():
     st.title("🔒 CyberPulse - Real-Time Threat Intelligence Platform")
     st.markdown("*Automated threat detection and prioritization for modern security teams*")
     
-    # Sidebar controls
-    st.sidebar.header("⚙️ Dashboard Controls")
+    # Add chatbot section at the top
+    st.header("🤖 AI Threat Intelligence Assistant")
+    
+    # Chat interface
+    with st.container():
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            user_query = st.text_input(
+                "Ask me about cybersecurity threats in natural language:",
+                placeholder="e.g., 'What ransomware attacks happened this week?' or 'Show me recent data breaches'"
+            )
+        
+        with col2:
+            search_button = st.button("🔍 Ask AI", type="primary")
+    
+    # Process chatbot query
+    if search_button and user_query:
+        with st.spinner("🧠 Analyzing your query..."):
+            matched_threats = extract_cybersecurity_terms(user_query)
+            
+            # Display chatbot response
+            response = generate_chatbot_response(matched_threats, user_query)
+            st.markdown(response)
+            
+            if matched_threats:
+                # Automatically fetch data for matched threats
+                st.write("---")
+                st.write("🚀 Fetching threat intelligence...")
+                
+                all_threat_data = {}
+                progress_bar = st.progress(0)
+                
+                for i, threat in enumerate(matched_threats[:5]):  # Limit to top 5
+                    data = get_threat_data(threat, 10)
+                    
+                    if data and 'results' in data:
+                        analysis = analyze_threat_sentiment(data, threat)
+                        # Use default severity filter of 3
+                        filtered_analysis = [a for a in analysis if a['threat_score'] >= 3]
+                        all_threat_data[threat] = {
+                            'raw_data': data,
+                            'analysis': filtered_analysis,
+                            'article_count': len(filtered_analysis)
+                        }
+                        st.success(f"✅ Found {len(filtered_analysis)} articles for {threat}")
+                    else:
+                        st.warning(f"⚠️ No data found for {threat}")
+                    
+                    progress_bar.progress((i + 1) / len(matched_threats[:5]))
+                
+                progress_bar.empty()
+                
+                if all_threat_data:
+                    st.session_state.threat_data = all_threat_data
+                    st.session_state.last_update = datetime.now()
+                    st.session_state.query_used = user_query
+                    st.success(f"🎉 Analysis complete! Found intelligence for {len(all_threat_data)} threat types.")
+                    display_dashboard_results()
+    
+    # Sidebar controls (existing functionality)
+    st.sidebar.header("⚙️ Manual Dashboard Controls")
+    st.sidebar.markdown("*Or use manual controls below:*")
     
     selected_threats = st.sidebar.multiselect(
         "🎯 Monitor Threats:", 
         list(cyber_threats.keys()), 
-        default=["ransomware attack", "data breach", "cyber attack"]  # Start with 3 threats
+        default=[]  # Empty by default since we have chatbot
     )
     
     severity_filter = st.sidebar.slider("🚨 Minimum Severity Level", 1, 10, 3)
@@ -218,13 +416,13 @@ def main():
         else:
             st.sidebar.error("❌ API connection failed")
     
-    # Main dashboard
-    if st.button("🔍 Fetch Latest Intelligence", type="primary"):
+    # Manual dashboard (existing functionality)
+    if st.sidebar.button("🔍 Fetch Latest Intelligence"):
         if not selected_threats:
-            st.warning("⚠️ Please select at least one threat type to monitor.")
+            st.warning("⚠️ Please select at least one threat type to monitor or use the AI assistant above.")
             return
         
-        st.write("🚀 Starting threat intelligence gathering...")
+        st.write("🚀 Starting manual threat intelligence gathering...")
         all_threat_data = {}
         
         # Create columns for live updates
@@ -271,31 +469,37 @@ def main():
         if all_threat_data:
             st.session_state.threat_data = all_threat_data
             st.session_state.last_update = datetime.now()
+            st.session_state.query_used = "Manual Selection"
             st.success(f"🎉 Successfully gathered intelligence for {len(all_threat_data)} threat types!")
             display_dashboard_results()
         else:
             st.error("❌ No threat data could be retrieved. Please check API connection.")
     
     elif hasattr(st.session_state, 'threat_data'):
-        st.info(f"📊 Showing cached data from {st.session_state.last_update.strftime('%H:%M:%S')}")
+        query_info = f" (from query: '{st.session_state.query_used}')" if hasattr(st.session_state, 'query_used') else ""
+        st.info(f"📊 Showing cached data from {st.session_state.last_update.strftime('%H:%M:%S')}{query_info}")
         display_dashboard_results()
     else:
-        # Show welcome screen
+        # Show welcome screen with chatbot examples
         st.markdown("""
-        ## 🎯 Welcome to CyberPulse
+        ## 🎯 Welcome to CyberPulse AI
         
-        **Real-time cyber threat intelligence dashboard** that monitors and analyzes threats across multiple categories.
+        **Real-time cyber threat intelligence dashboard** with AI-powered natural language queries.
         
-        ### 🚀 Getting Started:
-        1. Select threat types to monitor from the sidebar
-        2. Adjust severity filter and article count
-        3. Click "Fetch Latest Intelligence" to start
+        ### 🤖 Try the AI Assistant:
+        Ask questions like:
+        - *"What ransomware attacks happened this week?"*
+        - *"Show me recent data breaches in healthcare"*
+        - *"Any phishing campaigns targeting banks?"*
+        - *"Latest zero-day vulnerabilities affecting Windows"*
+        - *"Supply chain attacks on software companies"*
         
         ### 📊 Features:
+        - **Natural language queries** - Ask in plain English
+        - **Smart threat extraction** - AI identifies relevant cybersecurity terms
         - **Real-time threat scoring** based on sentiment and impact
         - **Interactive visualizations** for threat analysis
         - **Executive summaries** for quick decision making
-        - **Category-based filtering** and monitoring
         """)
 
 def display_dashboard_results():
