@@ -336,6 +336,13 @@ def main():
     # Add chatbot section at the top
     st.header("🤖 AI Threat Intelligence Assistant")
     
+    # AI Controls
+    ai_col1, ai_col2, ai_col3 = st.columns([2, 1, 1])
+    with ai_col2:
+        ai_severity_filter = st.slider("🚨 AI Severity Filter", 1, 10, 3, key="ai_severity")
+    with ai_col3:
+        ai_articles_per_threat = st.slider("📄 AI Articles per threat", 5, 100, 15, key="ai_articles")
+    
     # Chat interface
     with st.container():
         col1, col2 = st.columns([4, 1])
@@ -354,11 +361,19 @@ def main():
         with st.spinner("🧠 Analyzing your query..."):
             matched_threats = extract_cybersecurity_terms(user_query)
             
-            # Display chatbot response
-            response = generate_chatbot_response(matched_threats, user_query)
-            st.markdown(response)
-            
+            # Display chatbot response with current settings
             if matched_threats:
+                threat_list = ", ".join([threat.title() for threat in matched_threats[:3]])
+                response = f"""
+                🤖 **I found {len(matched_threats)} relevant cybersecurity topic(s) based on your query:**
+                
+                **Searching for:** {threat_list}
+                **Settings:** Severity ≥{ai_severity_filter}, {ai_articles_per_threat} articles per threat
+                
+                I'll fetch the latest threat intelligence for these topics. This may take a moment...
+                """
+                st.markdown(response)
+                
                 # Automatically fetch data for matched threats
                 st.write("---")
                 st.write("🚀 Fetching threat intelligence...")
@@ -367,18 +382,18 @@ def main():
                 progress_bar = st.progress(0)
                 
                 for i, threat in enumerate(matched_threats[:5]):  # Limit to top 5
-                    data = get_threat_data(threat, 10)
+                    data = get_threat_data(threat, ai_articles_per_threat)
                     
                     if data and 'results' in data:
                         analysis = analyze_threat_sentiment(data, threat)
-                        # Use default severity filter of 3
-                        filtered_analysis = [a for a in analysis if a['threat_score'] >= 3]
+                        # Use AI severity filter
+                        filtered_analysis = [a for a in analysis if a['threat_score'] >= ai_severity_filter]
                         all_threat_data[threat] = {
                             'raw_data': data,
                             'analysis': filtered_analysis,
                             'article_count': len(filtered_analysis)
                         }
-                        st.success(f"✅ Found {len(filtered_analysis)} articles for {threat}")
+                        st.success(f"✅ Found {len(filtered_analysis)} articles for {threat} (severity ≥{ai_severity_filter})")
                     else:
                         st.warning(f"⚠️ No data found for {threat}")
                     
@@ -389,9 +404,20 @@ def main():
                 if all_threat_data:
                     st.session_state.threat_data = all_threat_data
                     st.session_state.last_update = datetime.now()
-                    st.session_state.query_used = user_query
+                    st.session_state.query_used = f"{user_query} (AI: severity≥{ai_severity_filter}, {ai_articles_per_threat} articles)"
                     st.success(f"🎉 Analysis complete! Found intelligence for {len(all_threat_data)} threat types.")
                     display_dashboard_results()
+            else:
+                response = """
+                🤖 I didn't find any specific cybersecurity threats in your query. 
+                
+                Try asking about topics like:
+                - "What ransomware attacks happened recently?"
+                - "Show me data breaches this week"
+                - "Any phishing campaigns targeting banks?"
+                - "Latest zero-day vulnerabilities"
+                """
+                st.markdown(response)
     
     # Sidebar controls (existing functionality)
     st.sidebar.header("⚙️ Manual Dashboard Controls")
@@ -403,8 +429,8 @@ def main():
         default=[]  # Empty by default since we have chatbot
     )
     
-    severity_filter = st.sidebar.slider("🚨 Minimum Severity Level", 1, 10, 3)
-    articles_per_threat = st.sidebar.slider("📄 Articles per threat", 5, 30, 10)
+    severity_filter = st.sidebar.slider("🚨 Manual Severity Level", 1, 10, 3, key="manual_severity")
+    articles_per_threat = st.sidebar.slider("📄 Manual Articles per threat", 5, 100, 15, key="manual_articles")
     
     # Test API Connection
     if st.sidebar.button("🔧 Test API Connection"):
