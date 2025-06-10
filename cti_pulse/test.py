@@ -356,6 +356,32 @@ def main():
         with col2:
             search_button = st.button("🔍 Ask AI", type="primary")
     
+    # Sidebar controls (existing functionality)
+    st.sidebar.header("⚙️ Manual Dashboard Controls")
+    st.sidebar.markdown("*Or use manual controls below:*")
+    
+    selected_threats = st.sidebar.multiselect(
+        "🎯 Monitor Threats:", 
+        list(cyber_threats.keys()), 
+        default=[]  # Empty by default since we have chatbot
+    )
+    
+    severity_filter = st.sidebar.slider("🚨 Manual Severity Level", 1, 10, 3, key="manual_severity")
+    articles_per_threat = st.sidebar.slider("📄 Manual Articles per threat", 5, 100, 15, key="manual_articles")
+    
+    # Test API Connection
+    if st.sidebar.button("🔧 Test API Connection"):
+        st.sidebar.write("Testing API connection...")
+        test_data = get_threat_data("cyber attack", 5)
+        if test_data:
+            st.sidebar.success("✅ API connection successful!")
+            st.sidebar.write(f"Found {len(test_data.get('results', []))} results")
+        else:
+            st.sidebar.error("❌ API connection failed")
+    
+    # Flag to track if we should display results
+    should_display_results = False
+    
     # Process chatbot query
     if search_button and user_query:
         with st.spinner("🧠 Analyzing your query..."):
@@ -406,7 +432,7 @@ def main():
                     st.session_state.last_update = datetime.now()
                     st.session_state.query_used = f"{user_query} (AI: severity≥{ai_severity_filter}, {ai_articles_per_threat} articles)"
                     st.success(f"🎉 Analysis complete! Found intelligence for {len(all_threat_data)} threat types.")
-                    display_dashboard_results()
+                    should_display_results = True
             else:
                 response = """
                 🤖 I didn't find any specific cybersecurity threats in your query. 
@@ -419,31 +445,8 @@ def main():
                 """
                 st.markdown(response)
     
-    # Sidebar controls (existing functionality)
-    st.sidebar.header("⚙️ Manual Dashboard Controls")
-    st.sidebar.markdown("*Or use manual controls below:*")
-    
-    selected_threats = st.sidebar.multiselect(
-        "🎯 Monitor Threats:", 
-        list(cyber_threats.keys()), 
-        default=[]  # Empty by default since we have chatbot
-    )
-    
-    severity_filter = st.sidebar.slider("🚨 Manual Severity Level", 1, 10, 3, key="manual_severity")
-    articles_per_threat = st.sidebar.slider("📄 Manual Articles per threat", 5, 100, 15, key="manual_articles")
-    
-    # Test API Connection
-    if st.sidebar.button("🔧 Test API Connection"):
-        st.sidebar.write("Testing API connection...")
-        test_data = get_threat_data("cyber attack", 5)
-        if test_data:
-            st.sidebar.success("✅ API connection successful!")
-            st.sidebar.write(f"Found {len(test_data.get('results', []))} results")
-        else:
-            st.sidebar.error("❌ API connection failed")
-    
     # Manual dashboard (existing functionality)
-    if st.sidebar.button("🔍 Fetch Latest Intelligence"):
+    elif st.sidebar.button("🔍 Fetch Latest Intelligence"):
         if not selected_threats:
             st.warning("⚠️ Please select at least one threat type to monitor or use the AI assistant above.")
             return
@@ -497,10 +500,13 @@ def main():
             st.session_state.last_update = datetime.now()
             st.session_state.query_used = "Manual Selection"
             st.success(f"🎉 Successfully gathered intelligence for {len(all_threat_data)} threat types!")
-            display_dashboard_results()
+            should_display_results = True
         else:
             st.error("❌ No threat data could be retrieved. Please check API connection.")
     
+    # Display results only once
+    if should_display_results:
+        display_dashboard_results()
     elif hasattr(st.session_state, 'threat_data'):
         query_info = f" (from query: '{st.session_state.query_used}')" if hasattr(st.session_state, 'query_used') else ""
         st.info(f"📊 Showing cached data from {st.session_state.last_update.strftime('%H:%M:%S')}{query_info}")
