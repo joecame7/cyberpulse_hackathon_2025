@@ -1,9 +1,0 @@
-streamlit
-pandas
-plotly
-requests
-nltk
-workcloud
-matplotlib
-seaborn
-numpy
