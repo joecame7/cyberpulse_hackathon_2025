@@ -42,10 +42,6 @@ API for below:
 
 `include_smart_tags` boolean (if True, you get back metadata from our "smart" market intel classifiers - signals and industries)
 
-`ai_answer` can only accept "basic", this will take the 5 most relevant docs and answer the query_text based on them
-
-
-
 """
 
 # API endpoint from the newly deployed service
