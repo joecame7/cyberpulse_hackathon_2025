@@ -8,6 +8,15 @@ from datetime import datetime, timedelta
 import requests
 from collections import Counter
 import time
+import matplotlib.pyplot as plt
+import matplotlib.backends.backend_pdf as pdf_backend
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+import io
+import base64
 
 # Import your main CTI class
 # from cti_pulse_main import CyberThreatIntelligence
@@ -291,21 +300,139 @@ with insights_col2:
     - Cryptocurrency-related cyber crime surging
     """)
 
+def generate_pdf_report(data):
+    """Generate a comprehensive PDF report"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        textColor=colors.darkblue,
+        alignment=1  # Center alignment
+    )
+    story.append(Paragraph("🚨 Cyber Threat Intelligence Report", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Summary section
+    story.append(Paragraph("Executive Summary", styles['Heading2']))
+    summary_text = f"""
+    <b>Report Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>
+    <b>Total Threats Identified:</b> {data['total_threats']}<br/>
+    <b>Average Threat Score:</b> {data['avg_threat_score']:.2f}/1.0<br/>
+    <b>Critical Alerts:</b> {data['severity_counts']['critical']}<br/>
+    <b>Sources Monitored:</b> {data['sources_monitored']}
+    """
+    story.append(Paragraph(summary_text, styles['Normal']))
+    story.append(Spacer(1, 20))
+    
+    # High Priority Threats
+    story.append(Paragraph("High Priority Threats", styles['Heading2']))
+    for i, threat in enumerate(data['high_priority_threats'], 1):
+        threat_text = f"""
+        <b>{i}. {threat['title']}</b><br/>
+        Threat Score: {threat['threat_score']:.2f}<br/>
+        Categories: {', '.join(threat['categories'])}<br/>
+        Severity: {threat['severity'].upper()}<br/>
+        Source: {threat['source']}
+        """
+        story.append(Paragraph(threat_text, styles['Normal']))
+        story.append(Spacer(1, 10))
+    
+    # Threat Categories Table
+    story.append(Paragraph("Threat Categories Breakdown", styles['Heading2']))
+    table_data = [['Category', 'Count']]
+    for category, count in data['threat_categories'].items():
+        table_data.append([category.replace('_', ' ').title(), str(count)])
+    
+    table = Table(table_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 20))
+    
+    # Trending Threats
+    story.append(Paragraph("Trending Threats", styles['Heading2']))
+    for i, trend in enumerate(data['trending_threats'], 1):
+        story.append(Paragraph(f"{i}. {trend}", styles['Normal']))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def create_threat_chart_for_pdf(data):
+    """Create a chart image for PDF inclusion"""
+    plt.figure(figsize=(10, 6))
+    categories = list(data['threat_categories'].keys())
+    counts = list(data['threat_categories'].values())
+    
+    plt.bar(categories, counts, color='#dc3545', alpha=0.7)
+    plt.title('Threat Categories Distribution', fontsize=16, fontweight='bold')
+    plt.xlabel('Threat Category')
+    plt.ylabel('Number of Incidents')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    
+    # Save to bytes
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+    img_buffer.seek(0)
+    plt.close()
+    return img_buffer
+
 # Export functionality
 st.subheader("📋 Export & Sharing")
 export_col1, export_col2, export_col3 = st.columns(3)
 
 with export_col1:
     if st.button("📊 Export Dashboard"):
-        st.success("Dashboard exported to PDF!")
+        try:
+            with st.spinner("Generating PDF report..."):
+                pdf_buffer = generate_pdf_report(data)
+                
+                # Create download button
+                st.download_button(
+                    label="📄 Download PDF Report",
+                    data=pdf_buffer.getvalue(),
+                    file_name=f"threat_intelligence_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                    mime="application/pdf"
+                )
+                st.success("PDF report generated successfully!")
+        except Exception as e:
+            st.error(f"Error generating PDF: {str(e)}")
 
 with export_col2:
     if st.button("📧 Email Briefing"):
-        st.success("Threat briefing sent to security team!")
-
-with export_col3:
-    if st.button("🔗 Generate Report Link"):
-        st.success("Shareable report link generated!")
+        # Generate a text summary for email
+        email_content = f"""
+        CYBER THREAT INTELLIGENCE BRIEFING
+        Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        
+        SUMMARY:
+        - Total Threats: {data['total_threats']}
+        - Average Threat Score: {data['avg_threat_score']:.2f}
+        - Critical Alerts: {data['severity_counts']['critical']}
+        
+        TOP THREATS:
+        """
+        for i, threat in enumerate(data['high_priority_threats'][:3], 1):
+            email_content += f"{i}. {threat['title'][:60]}...\n"
+        
+        st.text_area("Email Content (Copy & Send):", email_content, height=200)
+        st.success("Email briefing prepared!")
 
 # Footer
 st.markdown("---")
