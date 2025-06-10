@@ -54,13 +54,18 @@ class CyberThreatIntelligence:
         }
         
     def query_api(self, query_text, result_size=50, include_highlights=True, include_smart_tags=True):
-        """Query the AMPLYFI API"""
+        """Query the AMPLYFI API following official requirements"""
+        # Ensure result_size doesn't exceed API limit
+        if result_size > 100:
+            result_size = 100
+            print(f"Warning: result_size reduced to 100 (API limit)")
+        
         payload = {
             "query_text": query_text,
             "result_size": result_size,
             "include_highlights": include_highlights,
             "include_smart_tags": include_smart_tags,
-            "ai_answer": "basic"
+            "ai_answer": "basic"  # Only "basic" is allowed
         }
         
         try:
@@ -137,7 +142,7 @@ class CyberThreatIntelligence:
         all_data = []
         queries = [
             "ransomware attack 2025",
-            "data breach notification",
+            "data breach notification", 
             "APT group campaign",
             "zero-day vulnerability",
             "malware campaign",
@@ -148,46 +153,71 @@ class CyberThreatIntelligence:
         
         for query in queries:
             print(f"   Querying: {query}")
-            response = self.query_api(query, result_size=25)
-            
-            if response and 'results' in response:
-                for item in response['results']:
-                    # Extract and clean data
-                    summary = item.get('summary', '')
-                    title = item.get('title', '')
-                    
-                    clean_summary = self.clean_text(summary)
-                    clean_title = self.clean_text(title)
-                    
-                    # Analyze the content
-                    sentiment_analysis = self.analyze_sentiment(summary)
-                    threat_categories = self.categorize_threat(summary + " " + title)
-                    severity = self.assess_severity(summary + " " + title)
-                    
-                    # Extract metadata
-                    data_point = {
-                        'query': query,
-                        'title': title,
-                        'summary': summary,
-                        'clean_summary': clean_summary,
-                        'clean_title': clean_title,
-                        'url': item.get('url', ''),
-                        'date': item.get('date', ''),
-                        'source': item.get('source', ''),
-                        'threat_categories': threat_categories,
-                        'severity': severity,
-                        'threat_score': sentiment_analysis['threat_score'],
-                        'threat_level': sentiment_analysis['threat_level'],
-                        'sentiment_compound': sentiment_analysis['sentiment_scores']['compound'],
-                        'sentiment_pos': sentiment_analysis['sentiment_scores']['pos'],
-                        'sentiment_neg': sentiment_analysis['sentiment_scores']['neg'],
-                        'sentiment_neu': sentiment_analysis['sentiment_scores']['neu']
-                    }
-                    
-                    all_data.append(data_point)
+            try:
+                # Use API compliant parameters: result_size <=100, include_smart_tags=True
+                response = self.query_api(
+                    query_text=query, 
+                    result_size=25,  # Well under 100 limit
+                    include_highlights=True,
+                    include_smart_tags=True
+                )
+                
+                if response and 'results' in response:
+                    for item in response['results']:
+                        # Extract and clean data
+                        summary = item.get('summary', '')
+                        title = item.get('title', '')
+                        
+                        if not summary and not title:  # Skip empty items
+                            continue
+                            
+                        clean_summary = self.clean_text(summary)
+                        clean_title = self.clean_text(title)
+                        
+                        # Analyze the content
+                        sentiment_analysis = self.analyze_sentiment(summary)
+                        threat_categories = self.categorize_threat(summary + " " + title)
+                        severity = self.assess_severity(summary + " " + title)
+                        
+                        # Extract metadata including smart_tags if available
+                        smart_tags = item.get('smart_tags', {})
+                        highlights = item.get('highlights', [])
+                        
+                        data_point = {
+                            'query': query,
+                            'title': title,
+                            'summary': summary,
+                            'clean_summary': clean_summary,
+                            'clean_title': clean_title,
+                            'url': item.get('url', ''),
+                            'date': item.get('date', ''),
+                            'source': item.get('source', 'Unknown'),
+                            'smart_tags': smart_tags,  # AMPLYFI smart tags
+                            'highlights': highlights,  # AMPLYFI highlights
+                            'threat_categories': threat_categories,
+                            'severity': severity,
+                            'threat_score': sentiment_analysis['threat_score'],
+                            'threat_level': sentiment_analysis['threat_level'],
+                            'sentiment_compound': sentiment_analysis['sentiment_scores']['compound'],
+                            'sentiment_pos': sentiment_analysis['sentiment_scores']['pos'],
+                            'sentiment_neg': sentiment_analysis['sentiment_scores']['neg'],
+                            'sentiment_neu': sentiment_analysis['sentiment_scores']['neu']
+                        }
+                        
+                        all_data.append(data_point)
+                        
+            except Exception as e:
+                print(f"   Error with query '{query}': {e}")
+                continue
         
         df = pd.DataFrame(all_data)
         print(f"✅ Collected {len(df)} threat intelligence items")
+        
+        # Remove duplicates based on title similarity
+        if not df.empty:
+            df = df.drop_duplicates(subset=['title'], keep='first')
+            print(f"✅ After deduplication: {len(df)} unique items")
+            
         return df
     
     def generate_threat_briefing(self, df):
