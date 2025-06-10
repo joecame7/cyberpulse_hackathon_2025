@@ -225,26 +225,70 @@ def get_threat_data(threat_keyword, num_results=20):
         return None
 
 def calculate_threat_score(article, threat_keyword):
-    """Calculate threat severity score based on multiple factors"""
+    """Calculate threat severity score based on multiple factors - rebalanced"""
     base_severity = cyber_threats.get(threat_keyword, {}).get("severity", 3)
     
-    # Sentiment factor (more negative = higher threat)
-    sentiment_factor = max(0, -article['sentiment_compound'] + 0.5)
+    # Sentiment factor (more negative = higher threat) - increased impact
+    sentiment_score = 0
+    if article['sentiment_compound'] < -0.5:  # Very negative
+        sentiment_score = 3
+    elif article['sentiment_compound'] < -0.1:  # Negative
+        sentiment_score = 2
+    elif article['sentiment_compound'] < 0.1:  # Neutral
+        sentiment_score = 1
+    else:  # Positive
+        sentiment_score = 0
     
-    # Recency factor (newer = higher threat)
+    # Recency factor (newer = higher threat) - less harsh penalty
+    recency_score = 0
     try:
-        pub_date = datetime.strptime(article['published_date'][:10], '%Y-%m-%d')
-        days_old = (datetime.now() - pub_date).days
-        recency_factor = max(0.1, 1 - (days_old / 30))  # Decay over 30 days
+        # Use timestamp field and handle ISO format
+        if article['published_date'] != 'Date not available':
+            if 'T' in article['published_date']:  # ISO format
+                pub_date = datetime.fromisoformat(article['published_date'].replace('Z', '+00:00'))
+            else:
+                pub_date = datetime.strptime(article['published_date'][:10], '%Y-%m-%d')
+            
+            days_old = (datetime.now(pub_date.tzinfo) - pub_date).days
+            if days_old <= 7:  # Last week
+                recency_score = 2
+            elif days_old <= 30:  # Last month
+                recency_score = 1
+            elif days_old <= 90:  # Last 3 months
+                recency_score = 0.5
+            else:  # Older
+                recency_score = 0
+        else:
+            recency_score = 0.5
     except:
-        recency_factor = 0.5
+        recency_score = 0.5
     
-    # Keywords that increase severity
-    high_impact_keywords = ['critical', 'widespread', 'global', 'massive', 'unprecedented']
-    keyword_boost = sum(1 for keyword in high_impact_keywords if keyword in article['clean_summary'])
+    # High impact keywords - expanded and more impactful
+    high_impact_keywords = [
+        'critical', 'widespread', 'global', 'massive', 'unprecedented',
+        'emergency', 'urgent', 'severe', 'major', 'significant',
+        'exploit', 'vulnerability', 'breach', 'compromise', 'attack'
+    ]
+    keyword_score = 0
+    for keyword in high_impact_keywords:
+        if keyword in article['clean_summary']:
+            keyword_score += 0.5  # Each keyword adds 0.5
+    keyword_score = min(keyword_score, 3)  # Cap at 3 points
     
-    final_score = (base_severity + sentiment_factor + keyword_boost) * recency_factor
-    return min(10, max(1, final_score))  # Clamp between 1-10
+    # Source credibility boost - major security sources get higher scores
+    source_boost = 0
+    major_sources = ['krebs', 'bleeping', 'dark reading', 'threatpost', 'security', 'cyber']
+    source_lower = article['source'].lower()
+    if any(source in source_lower for source in major_sources):
+        source_boost = 1
+    
+    # Calculate final score - additive instead of multiplicative
+    final_score = base_severity + sentiment_score + recency_score + keyword_score + source_boost
+    
+    # Normalize to 1-10 scale with better distribution
+    final_score = min(10, max(1, final_score))
+    
+    return final_score
 
 def analyze_threat_sentiment(threat_data, threat_keyword):
     """Enhanced threat analysis with scoring"""
@@ -266,17 +310,32 @@ def analyze_threat_sentiment(threat_data, threat_keyword):
         # Get sentiment
         sentiment = sia.polarity_scores(clean_summary)
         
+        # Get the correct date field (timestamp) and source from URL
+        published_date = article.get('timestamp', 'Date not available')
+        
+        # Extract source from URL
+        source = 'Source not available'
+        if 'url' in article and article['url']:
+            try:
+                # Extract domain from URL
+                import urllib.parse
+                parsed_url = urllib.parse.urlparse(article['url'])
+                source = parsed_url.netloc.replace('www.', '')  # Remove www. prefix
+            except:
+                source = article['url']  # Fallback to full URL if parsing fails
+        
         analysis_item = {
             'title': title,
             'summary': summary,
             'clean_summary': clean_summary,
             'sentiment_compound': sentiment['compound'],
             'sentiment_neg': sentiment['neg'],
-            'published_date': article.get('published_date', ''),
-            'source': article.get('source', ''),
+            'published_date': published_date,
+            'source': source,
             'highlights': article.get('highlights', []),
             'threat_keyword': threat_keyword,
-            'category': cyber_threats.get(threat_keyword, {}).get("category", "Unknown")
+            'category': cyber_threats.get(threat_keyword, {}).get("category", "Unknown"),
+            'raw_article': article  # Keep the full article for debugging
         }
         
         # Calculate threat score
@@ -298,10 +357,10 @@ def get_severity_color(score):
         return "🟢", "#44ff44"
 
 def generate_executive_summary(all_threat_data):
-    """Generate AI-powered executive summary"""
+    """Generate AI-powered executive summary with adjusted thresholds"""
     total_threats = sum(len(data['analysis']) for data in all_threat_data.values())
     high_severity = sum(1 for data in all_threat_data.values() 
-                       for article in data['analysis'] if article['threat_score'] >= 7)
+                       for article in data['analysis'] if article['threat_score'] >= 6)  # Lowered from 7
     
     # Find trending threats
     threat_counts = {threat: len(data['analysis']) for threat, data in all_threat_data.items()}
@@ -553,7 +612,7 @@ def display_dashboard_results():
     
     total_articles = sum(data['article_count'] for data in all_threat_data.values())
     all_articles = [article for data in all_threat_data.values() for article in data['analysis']]
-    high_severity_count = sum(1 for article in all_articles if article['threat_score'] >= 8)
+    high_severity_count = sum(1 for article in all_articles if article['threat_score'] >= 7)  # Adjusted threshold
     avg_score = np.mean([a['threat_score'] for a in all_articles]) if all_articles else 0
     
     with col1:
@@ -614,7 +673,7 @@ def display_dashboard_results():
     # Critical Alerts Section
     st.header("🚨 Critical Threat Alerts")
     
-    critical_threats = [a for a in all_articles if a['threat_score'] >= 8]
+    critical_threats = [a for a in all_articles if a['threat_score'] >= 7]  # Lowered from 8
     
     if critical_threats:
         for threat in critical_threats[:5]:  # Show top 5 critical
@@ -655,14 +714,41 @@ def display_dashboard_results():
                     sentiment_label = "Negative" if avg_sentiment < -0.1 else "Neutral" if avg_sentiment < 0.1 else "Positive"
                     st.metric("Sentiment", sentiment_label)
                 
-                # Top articles for this threat
-                st.subheader("Top Articles:")
-                for article in threat_articles[:3]:
-                    emoji, _ = get_severity_color(article['threat_score'])
-                    st.write(f"{emoji} **{article['title']}** (Score: {article['threat_score']:.1f})")
-                    st.write(f"*{article['summary'][:150]}...*")
-                    st.write(f"Source: {article['source']} | Date: {article['published_date']}")
-                    st.markdown("---")
+                # All articles for this threat
+                st.subheader(f"All {len(threat_articles)} Articles:")
+                
+                # Create a container for better organization
+                for i, article in enumerate(threat_articles, 1):
+                    emoji, color = get_severity_color(article['threat_score'])
+                    
+                    # Format the date for better readability
+                    formatted_date = article['published_date']
+                    if article['published_date'] != 'Date not available':
+                        try:
+                            # Handle ISO format timestamp
+                            if 'T' in article['published_date']:  # ISO format
+                                pub_date = datetime.fromisoformat(article['published_date'].replace('Z', '+00:00'))
+                                formatted_date = pub_date.strftime('%B %d, %Y at %I:%M %p UTC')
+                            else:
+                                pub_date = datetime.strptime(article['published_date'][:10], '%Y-%m-%d')
+                                formatted_date = pub_date.strftime('%B %d, %Y')
+                        except:
+                            formatted_date = article['published_date']  # Use as-is if parsing fails
+                    
+                    # Create a styled container for each article
+                    st.markdown(f"""
+                    <div style="border-left: 3px solid {color}; padding: 12px; margin: 8px 0; background-color: #f8f9fa; border-radius: 5px;">
+                        <h5 style="margin: 0 0 8px 0;">{emoji} <strong>Article {i}: {article['title']}</strong></h5>
+                        <p style="margin: 5px 0;"><strong>Severity Score:</strong> {article['threat_score']:.1f}/10</p>
+                        <p style="margin: 5px 0;"><strong>📅 Published:</strong> {formatted_date}</p>
+                        <p style="margin: 5px 0;"><strong>📰 Source:</strong> {article['source']}</p>
+                        <p style="margin: 8px 0 0 0;"><strong>Summary:</strong> {article['summary']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Add some spacing between articles
+                    if i < len(threat_articles):
+                        st.markdown("<br>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
