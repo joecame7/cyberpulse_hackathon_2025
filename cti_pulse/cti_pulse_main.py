@@ -17,6 +17,9 @@ import seaborn as sns
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from wordcloud import WordCloud
 import numpy as np
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Download required NLTK data
 nltk.download('vader_lexicon', quiet=True)
@@ -32,6 +35,17 @@ class CyberThreatIntelligence:
             "x-api-key": self.api_key
         }
         self.sia = SentimentIntensityAnalyzer()
+        
+        # Use simple session without complex retry strategy to avoid compatibility issues
+        self.session = requests.Session()
+        
+        # API status tracking
+        self.api_status = {
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'timeout_errors': 0,
+            'last_error': None
+        }
         
         # Define threat categories and keywords
         self.threat_categories = {
@@ -53,8 +67,8 @@ class CyberThreatIntelligence:
             'low': ['minor', 'low risk', 'limited', 'minimal']
         }
         
-    def query_api(self, query_text, result_size=50, include_highlights=True, include_smart_tags=True):
-        """Query the AMPLYFI API following official requirements"""
+    def query_api(self, query_text, result_size=50, include_highlights=True, include_smart_tags=True, timeout=30):
+        """Query the AMPLYFI API with simple retry logic"""
         # Ensure result_size doesn't exceed API limit
         if result_size > 100:
             result_size = 100
@@ -68,13 +82,51 @@ class CyberThreatIntelligence:
             "ai_answer": "basic"  # Only "basic" is allowed
         }
         
-        try:
-            response = requests.post(self.api_url, headers=self.headers, data=json.dumps(payload))
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"API Error: {e}")
-            return None
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"   Attempt {attempt + 1}/{max_retries} for query: {query_text}")
+                
+                # Use simple requests.post with timeout
+                response = requests.post(
+                    self.api_url, 
+                    headers=self.headers, 
+                    data=json.dumps(payload),
+                    timeout=timeout
+                )
+                response.raise_for_status()
+                
+                self.api_status['successful_requests'] += 1
+                return response.json()
+                
+            except requests.exceptions.Timeout as e:
+                self.api_status['timeout_errors'] += 1
+                self.api_status['last_error'] = f"Timeout error: {str(e)}"
+                print(f"   ⏰ Timeout error (attempt {attempt + 1}): {e}")
+                
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                    print(f"   ⏳ Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"   ❌ All retry attempts failed for query: {query_text}")
+                    
+            except requests.exceptions.RequestException as e:
+                self.api_status['failed_requests'] += 1
+                self.api_status['last_error'] = f"Request error: {str(e)}"
+                print(f"   ❌ API Error (attempt {attempt + 1}): {e}")
+                
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)
+                    print(f"   ⏳ Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"   ❌ All retry attempts failed for query: {query_text}")
+                    
+        self.api_status['failed_requests'] += 1
+        return None
     
     def clean_text(self, text):
         """Clean and normalize text for analysis"""
@@ -136,8 +188,9 @@ class CyberThreatIntelligence:
         return 'unknown'
     
     def collect_threat_intelligence(self, days_lookback=7):
-        """Collect comprehensive threat intelligence"""
+        """Collect comprehensive threat intelligence with improved error handling"""
         print("🔍 Collecting Cyber Threat Intelligence...")
+        print(f"⚙️  Using timeout: 30s, max retries: 3 per query")
         
         all_data = []
         queries = [
@@ -151,18 +204,26 @@ class CyberThreatIntelligence:
             "phishing campaign"
         ]
         
-        for query in queries:
-            print(f"   Querying: {query}")
+        successful_queries = 0
+        
+        for i, query in enumerate(queries, 1):
+            print(f"\n📡 Querying {i}/{len(queries)}: {query}")
+            
             try:
-                # Use API compliant parameters: result_size <=100, include_smart_tags=True
+                # Use API compliant parameters with extended timeout
                 response = self.query_api(
                     query_text=query, 
-                    result_size=25,  # Well under 100 limit
+                    result_size=20,  # Reduced to improve response time
                     include_highlights=True,
-                    include_smart_tags=True
+                    include_smart_tags=True,
+                    timeout=30  # 30 second timeout
                 )
                 
                 if response and 'results' in response:
+                    successful_queries += 1
+                    results_count = len(response['results'])
+                    print(f"   ✅ Success! Retrieved {results_count} results")
+                    
                     for item in response['results']:
                         # Extract and clean data
                         summary = item.get('summary', '')
@@ -205,18 +266,34 @@ class CyberThreatIntelligence:
                         }
                         
                         all_data.append(data_point)
+                else:
+                    print(f"   ⚠️  No results returned for query: {query}")
                         
             except Exception as e:
-                print(f"   Error with query '{query}': {e}")
+                print(f"   ❌ Unexpected error with query '{query}': {e}")
                 continue
+            
+            # Add delay between queries to avoid overwhelming the API
+            if i < len(queries):
+                print(f"   ⏳ Brief pause before next query...")
+                time.sleep(1)
         
         df = pd.DataFrame(all_data)
-        print(f"✅ Collected {len(df)} threat intelligence items")
+        
+        # Print summary
+        print(f"\n📊 Collection Summary:")
+        print(f"   • Successful queries: {successful_queries}/{len(queries)}")
+        print(f"   • Total data points: {len(df)}")
+        print(f"   • API success rate: {self.api_status['successful_requests']}/{self.api_status['successful_requests'] + self.api_status['failed_requests']}")
+        print(f"   • Timeout errors: {self.api_status['timeout_errors']}")
         
         # Remove duplicates based on title similarity
         if not df.empty:
+            original_count = len(df)
             df = df.drop_duplicates(subset=['title'], keep='first')
-            print(f"✅ After deduplication: {len(df)} unique items")
+            print(f"   • After deduplication: {len(df)} unique items (removed {original_count - len(df)} duplicates)")
+        else:
+            print("   ⚠️  No data collected - using fallback data for demo")
             
         return df
     
@@ -337,6 +414,154 @@ class CyberThreatIntelligence:
         
         print(f"📋 Threat report exported to {filename}")
         return report
+    
+    def get_api_status(self):
+        """Get current API status for monitoring"""
+        total_requests = self.api_status['successful_requests'] + self.api_status['failed_requests']
+        success_rate = (self.api_status['successful_requests'] / total_requests * 100) if total_requests > 0 else 0
+        
+        return {
+            'total_requests': total_requests,
+            'successful_requests': self.api_status['successful_requests'],
+            'failed_requests': self.api_status['failed_requests'],
+            'timeout_errors': self.api_status['timeout_errors'],
+            'success_rate': success_rate,
+            'last_error': self.api_status['last_error']
+        }
+    
+    def test_api_connection(self, timeout=5):
+        """Quick test to check if API is responsive"""
+        payload = {
+            "query_text": "test",
+            "result_size": 1,
+            "include_highlights": False,
+            "include_smart_tags": False,
+            "ai_answer": "basic"
+        }
+        
+        try:
+            response = requests.post(
+                self.api_url, 
+                headers=self.headers, 
+                data=json.dumps(payload),
+                timeout=timeout
+            )
+            return response.status_code == 200
+        except:
+            return False
+
+    def collect_threat_intelligence_fast(self, max_time_seconds=30):
+        """Fast threat intelligence collection with time limit"""
+        print("🚀 Fast Collection Mode - Limited time for demo responsiveness")
+        start_time = time.time()
+        
+        all_data = []
+        # Reduced and simplified queries for better success rate
+        queries = [
+            "cybersecurity",
+            "data breach",
+            "malware",
+            "ransomware"
+        ]
+        
+        successful_queries = 0
+        
+        for i, query in enumerate(queries, 1):
+            # Check time limit
+            elapsed = time.time() - start_time
+            if elapsed > max_time_seconds:
+                print(f"   ⏰ Time limit reached ({max_time_seconds}s), stopping collection")
+                break
+                
+            print(f"\n🔍 Quick query {i}/{len(queries)}: {query}")
+            
+            try:
+                # Single attempt with short timeout for fast mode
+                response = requests.post(
+                    self.api_url, 
+                    headers=self.headers, 
+                    data=json.dumps({
+                        "query_text": query,
+                        "result_size": 10,  # Much smaller for speed
+                        "include_highlights": True,
+                        "include_smart_tags": True,
+                        "ai_answer": "basic"
+                    }),
+                    timeout=8  # Short timeout for fast mode
+                )
+                
+                if response.status_code == 200:
+                    response_data = response.json()
+                    if 'results' in response_data:
+                        successful_queries += 1
+                        results_count = len(response_data['results'])
+                        print(f"   ✅ Quick success! {results_count} results")
+                        
+                        for item in response_data['results']:
+                            summary = item.get('summary', '')
+                            title = item.get('title', '')
+                            
+                            if not summary and not title:
+                                continue
+                                
+                            # Simplified processing for speed
+                            sentiment_analysis = self.analyze_sentiment(summary)
+                            threat_categories = self.categorize_threat(summary + " " + title)
+                            severity = self.assess_severity(summary + " " + title)
+                            
+                            data_point = {
+                                'query': query,
+                                'title': title,
+                                'summary': summary,
+                                'clean_summary': self.clean_text(summary),
+                                'clean_title': self.clean_text(title),
+                                'url': item.get('url', ''),
+                                'date': item.get('date', ''),
+                                'source': item.get('source', 'Unknown'),
+                                'smart_tags': item.get('smart_tags', {}),
+                                'highlights': item.get('highlights', []),
+                                'threat_categories': threat_categories,
+                                'severity': severity,
+                                'threat_score': sentiment_analysis['threat_score'],
+                                'threat_level': sentiment_analysis['threat_level'],
+                                'sentiment_compound': sentiment_analysis['sentiment_scores']['compound'],
+                                'sentiment_pos': sentiment_analysis['sentiment_scores']['pos'],
+                                'sentiment_neg': sentiment_analysis['sentiment_scores']['neg'],
+                                'sentiment_neu': sentiment_analysis['sentiment_scores']['neu']
+                            }
+                            
+                            all_data.append(data_point)
+                            
+                        self.api_status['successful_requests'] += 1
+                    else:
+                        print(f"   ⚠️ No results in response")
+                        self.api_status['failed_requests'] += 1
+                else:
+                    print(f"   ❌ HTTP {response.status_code}")
+                    self.api_status['failed_requests'] += 1
+                    
+            except requests.exceptions.Timeout:
+                print(f"   ⏰ Timeout (continuing to next query)")
+                self.api_status['timeout_errors'] += 1
+            except Exception as e:
+                print(f"   ❌ Error: {str(e)[:50]}...")
+                self.api_status['failed_requests'] += 1
+                
+            # Very brief pause
+            time.sleep(0.5)
+        
+        df = pd.DataFrame(all_data)
+        elapsed_total = time.time() - start_time
+        
+        print(f"\n⚡ Fast Collection Summary ({elapsed_total:.1f}s):")
+        print(f"   • Successful queries: {successful_queries}/{len(queries)}")
+        print(f"   • Total data points: {len(df)}")
+        
+        if not df.empty:
+            df = df.drop_duplicates(subset=['title'], keep='first')
+            print(f"   • Unique items: {len(df)}")
+        
+        return df
 
 # Main execution
 if __name__ == "__main__":
@@ -345,9 +570,16 @@ if __name__ == "__main__":
     cti = CyberThreatIntelligence(API_KEY)
     
     # Collect threat intelligence
-    threat_data = cti.collect_threat_intelligence()
+    threat_data = cti.collect_threat_intelligence(days_lookback=30)
     
     # Generate briefing
+    briefing = cti.generate_threat_briefing(threat_data)
+    
+    # Export report
+    report = cti.export_threat_report(threat_data, briefing)
+    
+    print("\n🎯 Cyber Threat Intelligence Pulse Complete!")
+    print("Ready for live demo and presentation!")    # Generate briefing
     briefing = cti.generate_threat_briefing(threat_data)
     
     # Create visualizations

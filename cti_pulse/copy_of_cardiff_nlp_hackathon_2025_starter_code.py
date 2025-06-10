@@ -63,7 +63,6 @@ payload = {
   "query_text": "What has Boeing been doing recently?",
   "result_size": 10,
   "include_highlights":True,
-  "ai_answer": "basic"
 }
 
 response = requests.post(API_URL, headers=headers, data=json.dumps(payload))

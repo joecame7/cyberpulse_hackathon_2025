@@ -56,7 +56,29 @@ st.markdown("""
 # Sidebar for controls
 st.sidebar.title("🛡️ CTI Control Panel")
 refresh_data = st.sidebar.button("🔄 Refresh Intelligence", type="primary")
+fast_mode = st.sidebar.checkbox("⚡ Fast Mode (30s limit)", value=True)
 auto_refresh = st.sidebar.checkbox("Auto-refresh (30s)")
+
+# API connection test
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔌 API Status")
+
+def test_api_quick():
+    """Quick API test"""
+    try:
+        API_KEY = "LKM38746G38B7RB46GBER"
+        cti = CyberThreatIntelligence(API_KEY)
+        return cti.test_api_connection(timeout=3)
+    except:
+        return False
+
+if st.sidebar.button("🧪 Test API Connection"):
+    with st.sidebar:
+        with st.spinner("Testing..."):
+            if test_api_quick():
+                st.success("✅ API Responsive")
+            else:
+                st.error("❌ API Slow/Down")
 
 # Main header
 st.markdown("""
@@ -73,20 +95,53 @@ if 'threat_data' not in st.session_state:
 
 # Load or refresh data
 @st.cache_data(ttl=1800)  # Cache for 30 minutes
-def load_threat_data():
-    """Load threat intelligence data from AMPLYFI API following official requirements"""
+def load_threat_data(use_fast_mode=True):
+    """Load threat intelligence data with fast mode option"""
     API_KEY = "LKM38746G38B7RB46GBER"
+    
+    # Show loading progress
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     
     try:
         # Initialize CTI system
         cti = CyberThreatIntelligence(API_KEY)
+        progress_bar.progress(10)
+        status_text.text("🔌 Testing API connection...")
         
-        # Collect real threat data with API compliant parameters
-        threat_df = cti.collect_threat_intelligence(days_lookback=7)
+        # Quick API test first
+        if not cti.test_api_connection(timeout=3):
+            progress_bar.progress(100)
+            status_text.text("⚠️ API unresponsive - using demo data")
+            time.sleep(1)
+            progress_bar.empty()
+            status_text.empty()
+            return load_mock_data()
+        
+        progress_bar.progress(25)
+        status_text.text("📡 Collecting threat data...")
+        
+        # Use fast mode if selected
+        if use_fast_mode:
+            threat_df = cti.collect_threat_intelligence_fast(max_time_seconds=25)
+        else:
+            threat_df = cti.collect_threat_intelligence(days_lookback=7)
+        
+        progress_bar.progress(70)
+        status_text.text("📊 Processing data...")
+        
+        # Get API status for monitoring
+        api_status = cti.get_api_status()
         
         if threat_df.empty:
-            st.error("No threat data collected from API")
-            return None
+            progress_bar.progress(100)
+            status_text.text("⚠️ No data collected - using demo")
+            time.sleep(1)
+            progress_bar.empty()
+            status_text.empty()
+            return load_mock_data_with_api_status(api_status)
+        
+        progress_bar.progress(85)
         
         # Process data for dashboard
         threat_counts = Counter()
@@ -107,8 +162,8 @@ def load_threat_data():
                 'categories': threat['threat_categories'],
                 'severity': threat['severity'],
                 'source': threat['source'],
-                'smart_tags': threat.get('smart_tags', {}),  # Include AMPLYFI smart tags
-                'highlights': threat.get('highlights', [])   # Include AMPLYFI highlights
+                'smart_tags': threat.get('smart_tags', {}),
+                'highlights': threat.get('highlights', [])
             })
         
         # Extract trending threats from most common categories
@@ -116,31 +171,46 @@ def load_threat_data():
         for category, count in threat_counts.most_common(4):
             trending_threats.append(f"{category.replace('_', ' ').title()} attacks ({count} incidents)")
         
+        if not trending_threats:  # Fallback if no categories found
+            trending_threats = ["Real-time threat monitoring active", "Data collection in progress"]
+        
         # API compliance metrics
         api_queries_made = len(threat_df['query'].unique()) if not threat_df.empty else 0
-        max_result_size = 25  # We use 25 per query (well under 100 limit)
+        max_result_size = 10 if use_fast_mode else 20
+        
+        progress_bar.progress(100)
+        status_text.text("✅ Data loaded successfully!")
+        time.sleep(0.5)
+        progress_bar.empty()
+        status_text.empty()
         
         return {
-            'threat_categories': dict(threat_counts),
-            'severity_counts': severity_counts,
-            'avg_threat_score': threat_df['threat_score'].mean(),
+            'threat_categories': dict(threat_counts) if threat_counts else {'unknown': len(threat_df)},
+            'severity_counts': severity_counts if severity_counts else {'unknown': len(threat_df)},
+            'avg_threat_score': threat_df['threat_score'].mean() if not threat_df.empty else 0.5,
             'total_threats': len(threat_df),
-            'sources_monitored': threat_df['source'].nunique(),
+            'sources_monitored': threat_df['source'].nunique() if not threat_df.empty else 1,
             'high_priority_threats': high_priority_threats,
             'trending_threats': trending_threats,
-            'raw_data': threat_df,  # Store raw data for further analysis
+            'raw_data': threat_df,
             'api_compliance': {
                 'queries_made': api_queries_made,
                 'max_result_size_used': max_result_size,
                 'include_highlights': True,
                 'include_smart_tags': True,
-                'ai_answer_mode': 'basic'
-            }
+                'ai_answer_mode': 'basic',
+                'fast_mode': use_fast_mode
+            },
+            'api_status': api_status
         }
         
     except Exception as e:
+        progress_bar.progress(100)
+        status_text.text(f"❌ Error: {str(e)[:50]}...")
+        time.sleep(1)
+        progress_bar.empty()
+        status_text.empty()
         st.error(f"Error loading threat data: {str(e)}")
-        # Fallback to mock data if API fails
         return load_mock_data()
 
 def load_mock_data():
@@ -182,11 +252,36 @@ def load_mock_data():
         ]
     }
 
+def load_mock_data_with_api_status(api_status):
+    """Fallback mock data with API status information"""
+    mock_data = load_mock_data()
+    mock_data['api_status'] = api_status
+    mock_data['high_priority_threats'] = [
+        {
+            'title': f'API Connection Issues - {api_status["timeout_errors"]} timeout errors',
+            'threat_score': 0.75,
+            'categories': ['system'],
+            'severity': 'high',
+            'source': 'System Monitor'
+        },
+        {
+            'title': f'Success Rate: {api_status["success_rate"]:.1f}%',
+            'threat_score': 0.60,
+            'categories': ['monitoring'],
+            'severity': 'medium',
+            'source': 'API Monitor'
+        }
+    ]
+    return mock_data
+
 # Load data
 if refresh_data or st.session_state.threat_data is None:
-    with st.spinner("🔍 Collecting latest threat intelligence from AMPLYFI API..."):
-        st.session_state.threat_data = load_threat_data()
-        st.session_state.last_update = datetime.now()
+    # Clear cache if refreshing
+    if refresh_data:
+        load_threat_data.clear()
+    
+    st.session_state.threat_data = load_threat_data(use_fast_mode=fast_mode)
+    st.session_state.last_update = datetime.now()
 
 data = st.session_state.threat_data
 
@@ -538,6 +633,70 @@ with export_col2:
         
         st.text_area("Email Content (Copy & Send):", email_content, height=200)
         st.success("Email briefing prepared!")
+
+# Display API status and compliance
+if 'raw_data' in data and 'api_compliance' in data:
+    if len(data['raw_data']) > 0:
+        mode_text = "⚡ Fast Mode" if data['api_compliance'].get('fast_mode', False) else "🔄 Full Mode"
+        st.success(f"✅ Connected to AMPLYFI API ({mode_text}) - {len(data['raw_data'])} live threat intel items analyzed")
+    else:
+        st.warning("⚠️ API connection established but no data retrieved")
+    
+    # Enhanced API Status Display
+    if 'api_status' in data:
+        api_status = data['api_status']
+        
+        # API Health Status
+        if api_status['success_rate'] >= 80:
+            status_color = "🟢"
+            status_text = "Healthy"
+        elif api_status['success_rate'] >= 50:
+            status_color = "🟡"
+            status_text = "Degraded"
+        else:
+            status_color = "🔴"
+            status_text = "Issues"
+            
+        st.info(f"{status_color} **API Status:** {status_text} - Success Rate: {api_status['success_rate']:.1f}%")
+        
+        # Show fast mode benefits if active
+        if data['api_compliance'].get('fast_mode', False):
+            st.info("⚡ **Fast Mode Active:** Optimized for demo performance with 30s timeout")
+        
+        # Detailed API Compliance Status
+        with st.expander("📋 Detailed API Status & Compliance"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Requests", api_status['total_requests'])
+                st.metric("Successful", api_status['successful_requests'])
+                st.metric("Failed", api_status['failed_requests'])
+            
+            with col2:
+                st.metric("Timeout Errors", api_status['timeout_errors'])
+                st.metric("Success Rate", f"{api_status['success_rate']:.1f}%")
+                
+                compliance = data['api_compliance']
+                st.metric("Max Result Size", f"{compliance['max_result_size_used']}/100")
+            
+            with col3:
+                st.write("**Include Highlights:**", "✅" if compliance['include_highlights'] else "❌")
+                st.write("**Include Smart Tags:**", "✅" if compliance['include_smart_tags'] else "❌")
+                st.write("**AI Answer Mode:**", compliance['ai_answer_mode'])
+                st.write("**Fast Mode:**", "✅" if compliance.get('fast_mode') else "❌")
+                
+                if api_status['last_error']:
+                    st.error(f"**Last Error:** {api_status['last_error']}")
+                else:
+                    st.success("**Status:** No recent errors")
+            
+else:
+    st.warning("⚠️ Using demo data - API connection failed or timed out")
+    
+    # Show mock API status if available
+    if 'api_status' in data:
+        api_status = data['api_status']
+        st.error(f"🔴 **API Issues Detected:** {api_status['timeout_errors']} timeout errors, {api_status['failed_requests']} failed requests")
 
 # Footer
 st.markdown("---")
