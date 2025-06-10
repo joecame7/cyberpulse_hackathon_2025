@@ -541,6 +541,9 @@ def display_dashboard_results():
     # Visualization Section
     st.header("📈 Threat Intelligence Visualizations")
     
+    # Create unique keys based on current time to avoid duplicates
+    timestamp = int(time.time() * 1000)  # Millisecond timestamp for uniqueness
+    
     # Create visualizations
     viz_col1, viz_col2 = st.columns(2)
     
@@ -555,7 +558,7 @@ def display_dashboard_results():
                 names=list(category_counts.keys()),
                 title="🎯 Threats by Category"
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, use_container_width=True, key=f"category_pie_{timestamp}")
     
     with viz_col2:
         # Severity distribution
@@ -574,7 +577,7 @@ def display_dashboard_results():
             color=severity_counts,
             color_continuous_scale="Reds"
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, use_container_width=True, key=f"severity_bar_{timestamp}")
     
     # Critical Alerts Section
     st.header("🚨 Critical Threat Alerts")
