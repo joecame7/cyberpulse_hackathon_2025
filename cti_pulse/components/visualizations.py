@@ -23,51 +23,12 @@ class ThreatVisualizations:
         # Create unique timestamp for chart keys
         timestamp = int(time.time() * 1000)
 
-        # Create two columns for charts
-        viz_col1, viz_col2 = st.columns(2)
-
-        with viz_col1:
-            self._render_category_distribution(all_articles, timestamp)
-
-        with viz_col2:
-            self._render_severity_distribution(all_articles, timestamp)
+        # Render severity distribution chart
+        self._render_severity_distribution(all_articles, timestamp)
 
         # Full width charts
         self._render_timeline_chart(all_articles, timestamp)
         self._render_source_analysis(all_articles, timestamp)
-
-    def _render_category_distribution(self, all_articles, timestamp):
-        """Render threat category distribution pie chart"""
-        categories = [article['category'] for article in all_articles]
-        category_counts = Counter(categories)
-
-        if category_counts:
-            # Custom colors for cybersecurity categories
-            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8']
-
-            fig_pie = px.pie(
-                values=list(category_counts.values()),
-                names=list(category_counts.keys()),
-                title="🎯 Threats by Category",
-                color_discrete_sequence=colors
-            )
-
-            fig_pie.update_traces(
-                textposition='inside',
-                textinfo='percent+label',
-                hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
-            )
-
-            fig_pie.update_layout(
-                showlegend=True,
-                height=400,
-                font=dict(size=12),
-                title_font_size=16
-            )
-
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.plotly_chart(fig_pie, use_container_width=True, key=f"category_pie_{timestamp}")
-            st.markdown('</div>', unsafe_allow_html=True)
 
     def _render_severity_distribution(self, all_articles, timestamp):
         """Render severity distribution bar chart"""
