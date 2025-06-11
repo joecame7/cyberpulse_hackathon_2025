@@ -1,5 +1,6 @@
 import streamlit as st
 import numpy as np
+import base64
 from datetime import datetime
 from assets.templates import *
 from assets.styles import get_severity_color_class, get_severity_emoji
@@ -11,7 +12,22 @@ class UIComponents:
 
     def render_header(self):
         """Render the main application header"""
-        st.markdown(get_header_template(), unsafe_allow_html=True)
+        try:
+            # Load and encode the logo image
+            with open("logo.png", "rb") as image_file:
+                logo_base64 = base64.b64encode(image_file.read()).decode()
+            
+            # Get template and insert the base64 encoded image
+            header_template = get_header_template().replace("{logo_base64}", logo_base64)
+            st.markdown(header_template, unsafe_allow_html=True)
+        except FileNotFoundError:
+            # Fallback to simple text header if logo not found
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem 0; margin-bottom: 2rem;">
+                <h1 style="color: #2d3748; margin: 0;">🔒 CyberPulse</h1>
+            </div>
+            """, unsafe_allow_html=True)
+            st.warning("⚠️ Logo file 'logo.png' not found. Using text header as fallback.")
 
     def render_sidebar(self):
         """Render sidebar controls and return configuration"""

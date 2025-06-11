@@ -7,12 +7,8 @@ Centralized HTML content for better maintainability
 def get_header_template():
     """Main application header template"""
     return """
-    <div class="main-header">
-        <h1>🔒 CyberPulse</h1>
-        <p>Real-Time Threat Intelligence Platform</p>
-        <p style="font-size: 0.95rem; margin-top: 0.5rem; opacity: 0.8;">
-            Automated threat detection and prioritization for modern security teams
-        </p>
+    <div style="text-align: center; padding: 1rem 0; margin-bottom: 2rem;">
+        <img src="data:image/png;base64,{logo_base64}" alt="CyberPulse Logo" style="height: 150px; width: auto;">
     </div>
     """
 
