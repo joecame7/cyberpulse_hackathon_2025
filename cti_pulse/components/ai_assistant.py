@@ -17,22 +17,25 @@ class AIAssistant:
         with ai_col2:
             ai_articles_per_threat = st.slider("📄 AI Articles per threat", 5, 100, 15, key="ai_articles")
 
-        # Chat interface
-        col1, col2 = st.columns([4, 1])
+        # Chat interface with proper alignment
+        col1, col2 = st.columns([5, 1])
 
         with col1:
             user_query = st.text_input(
                 "Ask me about cybersecurity threats in natural language:",
                 placeholder="e.g., 'What ransomware attacks happened this week?' or 'Show me recent data breaches'",
-                key="ai_query_input"
+                key="ai_query_input",
+                label_visibility="visible"
             )
 
         with col2:
-            search_button = st.button("🔍 Ask AI", type="primary", key="ai_search_btn")
+            # Add empty space to align button with input field
+            st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True)
+            search_button = st.button("🔍 Ask AI", type="primary", key="ai_search_btn", use_container_width=True)
 
         # Add some example queries as buttons
         st.markdown("**Quick Examples:**")
-        example_col1, example_col2, example_col3 = st.columns(3)
+        example_col1, example_col2, example_col3, example_col4 = st.columns([1, 1, 1, 2])
 
         example_query = None
 
