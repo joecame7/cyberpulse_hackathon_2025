@@ -37,7 +37,7 @@ class AIAssistant:
         example_query = None
 
         with example_col1:
-            if st.button("🔐 Recent Ransomware", key="example_1"):
+            if st.button("🔐 Ransomware", key="example_1"):
                 example_query = "What ransomware attacks happened this week?"
 
         with example_col2:
