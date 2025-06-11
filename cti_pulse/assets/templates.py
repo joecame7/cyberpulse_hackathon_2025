@@ -187,12 +187,12 @@ def get_ai_response_template(threat_count, threat_list, settings):
     <div style="background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); 
                 color: white; padding: 1.5rem; border-radius: 15px; margin: 1rem 0;">
         <h4 style="margin: 0 0 1rem 0;">
-            🤖 I found {threat_count} relevant cybersecurity topic(s) based on your query:
+            🤖 I found {threat_count} relevant cybersecurity topic{'s' if threat_count != 1 else ''} based on your query:
         </h4>
         <p><strong>Searching for:</strong> {threat_list}</p>
         <p><strong>Settings:</strong> Severity ≥{settings['severity_filter']}, {settings['articles_per_threat']} articles per threat</p>
         <p style="margin-bottom: 0; opacity: 0.9;">
-            I'll fetch the latest threat intelligence for these topics. This may take a moment...
+            I'll fetch the latest threat intelligence for {'these topics' if threat_count > 1 else 'this topic'}. This may take a moment...
         </p>
     </div>
     """

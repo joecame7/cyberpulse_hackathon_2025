@@ -23,7 +23,7 @@ class AIAssistant:
         with col1:
             user_query = st.text_input(
                 "Ask me about cybersecurity threats in natural language:",
-                placeholder="e.g., 'What ransomware attacks happened this week?' or 'Show me recent data breaches'",
+                placeholder="e.g., 'What ransomware attacks and data breaches happened this week?' or 'Show me phishing and malware threats'",
                 key="ai_query_input",
                 label_visibility="visible"
             )
@@ -45,11 +45,11 @@ class AIAssistant:
 
         with example_col2:
             if st.button("💾 Data Breaches", key="example_2"):
-                example_query = "Show me recent data breaches"
+                example_query = "Show me recent data breaches and phishing campaigns"
 
         with example_col3:
-            if st.button("🎣 Phishing Campaigns", key="example_3"):
-                example_query = "Any phishing campaigns targeting banks?"
+            if st.button("🎣 Multiple Threats", key="example_3"):
+                example_query = "Any malware, ransomware, or zero-day vulnerabilities this month?"
 
         # Use example query if button was clicked
         if example_query:

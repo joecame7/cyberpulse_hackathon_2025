@@ -71,23 +71,39 @@ class ThreatProcessor:
         for category, keywords in CYBER_KEYWORDS.items():
             for keyword in keywords:
                 if keyword in query_lower:
-                    max_existing_score = max(confidence_scores.values()) if confidence_scores else 0
-
-                    if max_existing_score > 10:
-                        continue
-
-                    # Map keywords to threat types
+                    # Don't skip if there are existing high scores - allow multiple threats
                     self._map_keyword_to_threat(keyword, category, confidence_scores)
 
-        # Sort and return top matches
+        # Sort and return multiple matches (changed logic)
         sorted_threats = sorted(confidence_scores.items(), key=lambda x: x[1], reverse=True)
 
         if sorted_threats:
-            top_score = sorted_threats[0][1]
-            if top_score >= 10:
-                return [sorted_threats[0][0]]
+            # Return multiple threats based on relevance
+            relevant_threats = []
+            
+            # Always include high confidence matches (score >= 8)
+            high_confidence = [threat for threat, score in sorted_threats if score >= 8]
+            relevant_threats.extend(high_confidence)
+            
+            # If we have high confidence matches, also include medium confidence ones
+            if high_confidence:
+                medium_confidence = [threat for threat, score in sorted_threats 
+                                   if 5 <= score < 8 and threat not in relevant_threats]
+                relevant_threats.extend(medium_confidence[:2])  # Add up to 2 medium confidence
             else:
-                return [threat for threat, score in sorted_threats if score > 5 and (top_score - score) <= 3]
+                # If no high confidence, take top medium confidence matches
+                medium_confidence = [threat for threat, score in sorted_threats if score >= 5]
+                relevant_threats.extend(medium_confidence[:3])  # Take top 3
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            final_threats = []
+            for threat in relevant_threats:
+                if threat not in seen:
+                    seen.add(threat)
+                    final_threats.append(threat)
+            
+            return final_threats[:5]  # Limit to top 5 threats max
 
         return []
 
