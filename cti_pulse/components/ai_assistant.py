@@ -9,12 +9,12 @@ class AIAssistant:
         """Render the AI chat interface"""
         st.markdown(get_ai_container_template(), unsafe_allow_html=True)
 
-        # AI Controls
-        ai_col1, ai_col2, ai_col3 = st.columns([2, 1, 1])
+        # AI Controls - aligned to the left like the chat input
+        ai_col1, ai_col2 = st.columns([1, 1])
 
-        with ai_col2:
+        with ai_col1:
             ai_severity_filter = st.slider("🚨 AI Severity Filter", 1, 10, 3, key="ai_severity")
-        with ai_col3:
+        with ai_col2:
             ai_articles_per_threat = st.slider("📄 AI Articles per threat", 5, 100, 15, key="ai_articles")
 
         # Chat interface
