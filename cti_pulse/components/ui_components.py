@@ -128,31 +128,15 @@ class UIComponents:
         
         # Main title and intro
         st.markdown("""
-        <div style="text-align: center; padding: 2rem 0;">
+        <div style="text-align: center; padding: 2rem 0 1rem 0;">
             <h1 style="font-size: 2.5rem; color: #2d3748; margin-bottom: 1rem;">🎯 Welcome to CyberPulse AI</h1>
-            <p style="font-size: 1.2rem; color: #4a5568; margin-bottom: 2rem;">
+            <p style="font-size: 1.2rem; color: #4a5568; margin-bottom: 0;">
                 Real-time cyber threat intelligence dashboard with AI-powered natural language queries
             </p>
         </div>
         """, unsafe_allow_html=True)
-
-        # AI Assistant section
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                    color: white; padding: 2rem; border-radius: 15px; margin-bottom: 2rem;">
-            <h3 style="margin-top: 0; font-size: 1.5rem;">🤖 Try the AI Assistant</h3>
-            <p style="margin-bottom: 1rem;">Ask questions like:</p>
-        </div>
-        """, unsafe_allow_html=True)
         
-        # Example questions using regular markdown
-        st.markdown("**Example questions you can ask:**")
-        st.markdown("• *'What ransomware attacks happened this week?'*")
-        st.markdown("• *'Show me recent data breaches in healthcare'*") 
-        st.markdown("• *'Any phishing campaigns targeting banks?'*")
-        st.markdown("• *'Latest zero-day vulnerabilities affecting Windows'*")
-        st.markdown("• *'Supply chain attacks on software companies'*")
-        
+        # Add separator line
         st.markdown("---")
         
         # Features section
