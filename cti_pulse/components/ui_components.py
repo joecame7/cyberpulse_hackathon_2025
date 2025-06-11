@@ -6,7 +6,6 @@ from assets.styles import get_severity_color_class, get_severity_emoji
 from config.settings import CYBER_THREATS
 from utils.data_processor import generate_executive_summary
 
-
 class UIComponents:
     """UI Components for the CyberPulse application"""
 

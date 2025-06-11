@@ -12,21 +12,32 @@ class ThreatAnalysis:
         """Render detailed threat analysis for each threat type"""
         st.header("🔍 Detailed Threat Analysis")
 
-        for threat_name, data in all_threat_data.items():
-            if data['analysis']:
-                self._render_threat_section(threat_name, data)
+        # Use tabs instead of nested expanders
+        if all_threat_data:
+            threat_names = list(all_threat_data.keys())
+            tabs = st.tabs([f"📋 {name.title()} ({len(all_threat_data[name]['analysis'])})" for name in threat_names])
 
-    def _render_threat_section(self, threat_name, data):
-        """Render analysis section for a specific threat"""
+            for tab, (threat_name, data) in zip(tabs, all_threat_data.items()):
+                with tab:
+                    if data['analysis']:
+                        self._render_threat_content(threat_name, data)
+
+    def _render_threat_content(self, threat_name, data):
+        """Render content for a specific threat"""
         threat_articles = data['analysis']
 
-        with st.expander(f"📋 {threat_name.title()} ({len(threat_articles)} articles)", expanded=False):
-            # Threat-specific metrics
-            self._render_threat_metrics(threat_articles)
+        # Threat-specific metrics
+        self._render_threat_metrics(threat_articles)
 
-            # Article list
-            st.subheader(f"📄 All {len(threat_articles)} Articles:")
-            self._render_article_list(threat_articles)
+        # Article list with details
+        st.subheader(f"📄 All {len(threat_articles)} Articles:")
+
+        # Use session state to track which articles have expanded details
+        if 'expanded_articles' not in st.session_state:
+            st.session_state.expanded_articles = set()
+
+        for i, article in enumerate(threat_articles, 1):
+            self._render_article_with_details(article, i, threat_name)
 
     def _render_threat_metrics(self, threat_articles):
         """Render metrics for a specific threat type"""
@@ -86,27 +97,47 @@ class ThreatAnalysis:
         </div>
         """, unsafe_allow_html=True)
 
-    def _render_article_list(self, threat_articles):
-        """Render list of articles for a threat"""
-        for i, article in enumerate(threat_articles, 1):
-            severity_class = get_severity_color_class(article['threat_score'])
-            emoji = get_severity_emoji(article['threat_score'])
-            formatted_date = self._format_date(article['published_date'])
+    def _render_article_with_details(self, article, index, threat_name):
+        """Render article with expandable details"""
+        severity_class = get_severity_color_class(article['threat_score'])
+        emoji = get_severity_emoji(article['threat_score'])
+        formatted_date = self._format_date(article['published_date'])
 
-            st.markdown(get_threat_article_template(
-                i,
-                article['title'],
-                f"{article['threat_score']:.1f}",
-                formatted_date,
-                article['source'],
-                article['summary'],
-                severity_class,
-                emoji
-            ), unsafe_allow_html=True)
+        # Unique key for this article
+        article_key = f"{threat_name}_{index}_{hash(article['title'])}"
 
-            # Add expandable section for additional details
-            with st.expander(f"🔍 More details for Article {i}", expanded=False):
+        # Main article display
+        st.markdown(get_threat_article_template(
+            index,
+            article['title'],
+            f"{article['threat_score']:.1f}",
+            formatted_date,
+            article['source'],
+            article['summary'],
+            severity_class,
+            emoji
+        ), unsafe_allow_html=True)
+
+        # Toggle button for details
+        col1, col2 = st.columns([2, 3])
+        with col1:
+            if st.button(
+                    "🔍 Show Details" if article_key not in st.session_state.expanded_articles else "🔽 Hide Details",
+                    key=f"toggle_{article_key}",
+                    use_container_width=True
+            ):
+                if article_key in st.session_state.expanded_articles:
+                    st.session_state.expanded_articles.remove(article_key)
+                else:
+                    st.session_state.expanded_articles.add(article_key)
+                st.rerun()
+
+        # Show details if expanded
+        if article_key in st.session_state.expanded_articles:
+            with st.container():
+                st.markdown("---")
                 self._render_article_details(article)
+                st.markdown("---")
 
     def _render_article_details(self, article):
         """Render detailed information for a single article"""
