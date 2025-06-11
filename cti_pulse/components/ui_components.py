@@ -184,7 +184,7 @@ class UIComponents:
             Quick decision-making insights for leadership
             
             **🚨 Critical Alerts**  
-            Prioritized threat notifications for immediate action
+            Prioritised threat notifications for immediate action
             """)
 
     def display_ai_response(self, matched_threats, settings):
